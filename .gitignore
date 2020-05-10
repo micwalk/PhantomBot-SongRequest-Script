@@ -1,0 +1,38 @@
+# Ignore everything
+/*
+
+# # ignore everything in the `dist` folder
+# dist/*
+# # … but don’t ignore the `dist/samples` folder
+# !dist/samples/
+# # … but ignore everything inside that `dist/samples` folder
+# dist/samples/*
+# # … except the `README.md` there
+# !dist/samples/README.md
+
+# But not these files...
+
+!.gitignore
+#don't ignore the script folder itself
+!scripts/
+#ignore everything inside scripts
+scripts/*
+#but not the custom folder
+!scripts/custom
+scripts/custom/README.txt
+
+!web/
+web/*
+!web/obs/
+web/obs/*
+!web/obs/requests-chart
+
+#songRequestSystem.js
+#!*/web/obs/requests-chart/*
+
+# ...even if they are in subdirectories
+#!*/
+
+# if the files to be tracked are in subdirectories
+#!*/a/b/file1.txt
+#!*/a/b/c/*
