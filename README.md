@@ -1,6 +1,10 @@
 # PhantomBot SongRequest Script
 This is a custom module for the PhantomBot twitch bot. Takes requsts from users and generates an overlay to show on your stream.
 
+Overlay Screenshot:
+
+![Example Image Top List](DocImages/ExampleScreenshotToplist.png)
+
 Tested with PhantomBot 3.1.2
 https://github.com/PhantomBot/PhantomBot
 https://phantombot.tv/

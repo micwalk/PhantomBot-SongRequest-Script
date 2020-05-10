@@ -11,9 +11,9 @@
 # !dist/samples/README.md
 
 # But not these files...
-
 !.gitignore
 !README.md
+!DocImages/
 
 #don't ignore the script folder itself
 !scripts/
