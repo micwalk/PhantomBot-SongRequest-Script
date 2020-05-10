@@ -13,6 +13,8 @@
 # But not these files...
 
 !.gitignore
+!README.md
+
 #don't ignore the script folder itself
 !scripts/
 #ignore everything inside scripts
