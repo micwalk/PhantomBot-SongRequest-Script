@@ -337,13 +337,13 @@ $(function() {
                     }
                 } else if(message.hasOwnProperty('eventFamily') && message['eventFamily'] == 'requests') {
                     // Handle request related stuff
-                    if(message['eventType'] == 'requests_opened') {
-                        console.log("requests opened!")
-                        //start showing requests
-                        //create chart
-                        createChart(message, getOptionSetting('slideFromOpen', 'right'));
-
-                    }
+                    //XXX: This is now just handled by generic top_songs event.
+                    // if(message['eventType'] == 'requests_opened') {
+                    //     console.log("requests opened!")
+                    //     //start showing requests
+                    //     //create chart
+                    //     createChart(message, getOptionSetting('slideFromOpen', 'right'));
+                    // }
 
                     if(message['eventType'] == 'requests_closed') {
                         console.log("requests closed!")
@@ -354,9 +354,8 @@ $(function() {
                     }
                     
                     //TODO: split this in half
-                    if(message['eventType'] == 'request_made') {
-                        console.log("new request!")
-                        //handle request made
+                    if(message['eventType'] == 'top_songs') {
+                        console.log("Update for top songs!")
                         updateChart(message);
 
                     }

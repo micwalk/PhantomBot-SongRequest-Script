@@ -70,10 +70,10 @@
     }
     
     //Sends top song data to the web socket
-    function sendTopSongData(eventType) {
+    function sendTopSongData() {
         $.panelsocketserver.sendJSONToAll(JSON.stringify({
             'eventFamily': 'requests',
-            'eventType': eventType,
+            'eventType': 'top_songs',
             'data': JSON.stringify(getTopRequests())
         }));
     }
@@ -128,7 +128,7 @@
         requests.areOpen = true;
         //request open time?
 
-        sendTopSongData('requests_opened');
+        sendTopSongData();
         return true;
     }
 
@@ -145,9 +145,13 @@
     function resetRequests() {
         requests.songs = {};
         requests.history = [];
-        sendTopSongData("request_made") //reuse request_made for now
+        sendTopSongData();
     }
 
+
+    function standardizeName(songName) {
+        return songName.toLowerCase(); //TODO: Clean me more?
+    }
 
      /**
      * @function makeRequest
@@ -162,7 +166,7 @@
 
         //lookup song
         
-        var cleanSongName = songName.toLowerCase(); //TODO: Clean me more?
+        var cleanSongName = standardizeName(songName);
         
         //TODO: validate song name and reject (length? injection? profanity?)
         var songInvalid = cleanSongName.length > 30;
@@ -196,7 +200,7 @@
 
         //Send data to overlay UI
         //TODO: send two events -- history and total
-        sendTopSongData('request_made');
+        sendTopSongData();
 
         return true;
         ////This snippet sent data to the websocket the UI is listening on
@@ -208,6 +212,45 @@
         //Used in web\panel\js\pages\extra\poll.js
         //So the main control UI not the overlay UI
         // $.inidb.incr('pollVotes', poll.options[optionIndex], 1);
+    };
+
+    function updateRequestPlayed(songName, sender) {
+        $.consoleLn("mark played request: " + songName + " by " + sender)
+        var stdName = standardizeName(songName);
+
+        if(requests.songs.hasOwnProperty(stdName)) {
+            var songdata = requests.songs[stdName]
+            delete requests.songs[stdName];
+            requests.playedSongs.push(songdata); //Add to played history.
+
+            //Can't use whisperPrefix to everyone, so send one group message.
+            var voterString = ""
+            if(songdata.voters.length > 0) {
+                voterString = "@" + songdata.voters.join(", @")
+            } else {
+                voterString = "none of yall"
+            }
+            
+            sendTopSongData();
+            $.say($.lang.get('songrequest.update.played', songdata.displayName, voterString));
+            //Mark played
+        } else {
+            //Complain
+            $.say($.whisperPrefix(sender) + $.lang.get('songrequest.update.notfound'));
+        }
+    };
+
+    function updateRequestDelete(songName, sender) {
+        $.consoleLn("delete request: " + songName + " by " + sender)
+        var stdName = standardizeName(songName);
+
+        if(requests.songs.hasOwnProperty(stdName)) {
+            delete requests.songs[stdName];
+            sendTopSongData();
+            $.say($.whisperPrefix(sender) + $.lang.get('songrequest.update.deleted', stdName));
+        } else {
+            $.say($.whisperPrefix(sender) + $.lang.get('songrequest.update.notfound'));
+        }
     };
 
     /**
@@ -306,14 +349,19 @@
             } else if (action.equalsIgnoreCase('refresh')) {
                 //refreshes overlay
                 if (requests.areOpen) {
-                    sendTopSongData("request_made");//re-use request_made aain
+                    sendTopSongData();
                 } else {
                     sendRequestsClosed();
                 }
             } else if (action.equalsIgnoreCase('played')) {
-                $.say('TODO: Implement played command');
+                var songName = argsString.substring("played".length, argsString.length()).trim()
+                $.consoleLn("delete request: " + songName + " by " + sender)
+
+                updateRequestPlayed(songName, sender);
             } else if (action.equalsIgnoreCase('delete')) {
-                $.say('TODO: Implement delete command');
+                var songName = argsString.substring("delete".length, argsString.length()).trim()
+                $.consoleLn('parse: [' + songName + "]");
+                updateRequestDelete(songName, sender);
             } else {
                 $.say($.whisperPrefix(sender) + $.lang.get('songrequest.usage'));
             }
