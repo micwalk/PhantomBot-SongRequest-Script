@@ -25,7 +25,7 @@
 
     
     var requests = {
-        areOpen: false,
+        areOpen: true,
         songs: {},
         history: [],
         playedSongs: []
@@ -64,13 +64,25 @@
         return requestDataSimple.sort(function (a, b) {return (a.votes < b.votes) ? 1 : -1});
     }
 
+    var nextRequestHistId = 0;
+    function recordHistory(requestor, songDisplayName, songStdName) {
+        requests.history.push({
+            requestId: nextRequestHistId++,
+            sender: requestor, 
+            song: songDisplayName, 
+            songNameStd: songStdName,
+            time: (new Date()).getTime()
+        } );
+    }
+
     function getRecentHistory(maxHistory) {
-        var shortHistory = requests.history.slice(requests.history.length-maxHistory, requests.history.length);
+        var shortHistory = requests.history.slice(-maxHistory, requests.history.length);
         return shortHistory.reverse();
     }
     
     //Sends top song data to the web socket
     function sendTopSongData() {
+        $.consoleLn("Sending top songs")
         $.panelsocketserver.sendJSONToAll(JSON.stringify({
             'eventFamily': 'requests',
             'eventType': 'top_songs',
@@ -80,14 +92,24 @@
     
     //Sends top song data to the web socket
     function sendRecentHistory() {
+        const SEND_HIST_SIZE = 10;
+
+        $.consoleLn("Sending request history");
+        
+        var recentList = getRecentHistory(SEND_HIST_SIZE);
+        var serializedList = JSON.stringify(recentList)
+
+        $.consoleLn(serializedList);
+
         $.panelsocketserver.sendJSONToAll(JSON.stringify({
             'eventFamily': 'requests',
             'eventType': 'request_history',
-            'data': JSON.stringify(getRecentHistory(5))
+            'data': serializedList
         }));
     }
 
     function sendRequestsClosed() {
+        $.consoleLn("Sending requests closed")
         $.panelsocketserver.sendJSONToAll(JSON.stringify({
             'eventFamily': 'requests',
             'eventType': 'requests_closed'
@@ -129,6 +151,7 @@
         //request open time?
 
         sendTopSongData();
+        sendRecentHistory();
         return true;
     }
 
@@ -191,16 +214,13 @@
         currentSong.voters.push(sender);
         currentSong.votes++;
 
-        //TODO: Actual time here
-        requests.history.push({sender: sender, song: cleanSongName, songNameRaw: songName, time: (new Date()).getTime()});
-
-        $.say($.whisperPrefix(sender) + $.lang.get('songrequest.request.accepted', cleanSongName, currentSong.votes));
-
-        
+        //Record history
+        recordHistory(sender, currentSong.displayName, currentSong.songName);
+        $.say($.whisperPrefix(sender) + $.lang.get('songrequest.request.accepted', currentSong.displayName, currentSong.votes));
 
         //Send data to overlay UI
-        //TODO: send two events -- history and total
         sendTopSongData();
+        sendRecentHistory();
 
         return true;
         ////This snippet sent data to the websocket the UI is listening on
@@ -257,9 +277,10 @@
      * @event command
      */
     $.bind('command', function(event) {
-        var sender = event.getSender().toLowerCase(),
+        //Adding "" to cast as js strings. blows up serialization if not done
+        var sender = "" + event.getSender().toLowerCase(),
             command = event.getCommand(),
-            argsString = event.getArguments().trim(),
+            argsString = "" + event.getArguments().trim(),
             args = event.getArgs(),
             action = args[0];
 
@@ -272,7 +293,7 @@
         
         if (command.equalsIgnoreCase('request') ) {//&& argsString.length > 0
             // $.say($.whisperPrefix(sender) + "attempting request for " + argsString);
-            var requestAccepted = makeRequest(sender, argsString + ""); //+"" to cast as js string
+            var requestAccepted = makeRequest(sender, argsString);
             return;
         }
 
@@ -342,24 +363,25 @@
                     var song = recentHistory[i].song;
                     newsongs += "  " + 
                         recentHistory[i].sender + 
-                        " requested " + recentHistory[i].songNameRaw +
-                         " (" + requests.songs[recentHistory[i].song].votes +" total)"
+                        " requested " + recentHistory[i].song +
+                         " (" + requests.songs[recentHistory[i].songNameStd].votes +" total)"
                 }
                 $.say($.lang.get('songrequest.action.new', newsongs));
             } else if (action.equalsIgnoreCase('refresh')) {
                 //refreshes overlay
                 if (requests.areOpen) {
                     sendTopSongData();
+                    sendRecentHistory();
                 } else {
                     sendRequestsClosed();
                 }
             } else if (action.equalsIgnoreCase('played')) {
-                var songName = argsString.substring("played".length, argsString.length()).trim()
+                var songName = argsString.substring("played".length, argsString.length).trim()
                 $.consoleLn("delete request: " + songName + " by " + sender)
 
                 updateRequestPlayed(songName, sender);
             } else if (action.equalsIgnoreCase('delete')) {
-                var songName = argsString.substring("delete".length, argsString.length()).trim()
+                var songName = argsString.substring("delete".length, argsString.length).trim()
                 $.consoleLn('parse: [' + songName + "]");
                 updateRequestDelete(songName, sender);
             } else {

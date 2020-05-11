@@ -113,6 +113,13 @@ $(function() {
         return 'rgb(' + red + ', ' + green + ', ' + blue + ')';
     };
 
+    function getOrPickSongColor(songName) {
+        if(!songColorMap.hasOwnProperty(songName)){
+            songColorMap[songName] = getRandomRGB();
+        }
+        return songColorMap[songName];
+    }
+
     /*
      * @function Function that gets data for our chart.
      *
@@ -136,15 +143,19 @@ $(function() {
             'data': {
                 'datasets': [{
                     'data': [],
-                    'backgroundColor': []
+                    'backgroundColor': [],
+                    'barThickness': 1,
+                    'maxBarThickness': 2,
+                    'minBarLength': 2,
                 }],
                 'labels': [],
             },
             'options': {
                 'responsive': true,
+                maintainAspectRatio: false,
                 'scales': {
                     'xAxes':[{
-                        display: true,
+                        display: false,
                         ticks:{
                             fontSize: 20,
                             beginAtZero: true,
@@ -172,6 +183,14 @@ $(function() {
                     'fontColor': 'black',
                     'text': 'Top Song Requests'
                 },
+                'layout': {
+                    padding: {
+                        left: 10,
+                        right: 0,
+                        top: 0,
+                        bottom: 0
+                    }
+                },
                 'plugins': {
                     'datalabels': {
                         'anchor' : 'center',
@@ -194,22 +213,13 @@ $(function() {
             }
         };
 
-
-        //insert missing songs into color map
-        //Generate random colors for each song name
-        parsedData.forEach(songdata => {
-            if(!songColorMap.hasOwnProperty(songdata.name)){
-                songColorMap[songdata.name] = getRandomRGB();
-            }
-        })
-
         // Add the data only for top things
         parsedData.slice(0,maxDisplaySongs).map(songdata => {
             //TODO: add id
             config.data.labels.push(songdata.name); //+ ' (#' + json.id++ + ')'
             config.data.datasets[0].data.push(parseInt(songdata.votes));
             
-            config.data.datasets[0].backgroundColor.push(songColorMap[songdata.name]);
+            config.data.datasets[0].backgroundColor.push(getOrPickSongColor(songdata.name));
         });
 
         return config;
@@ -222,26 +232,26 @@ $(function() {
      * @param slideFrom The option where to slide it from, left, right, top, bottom.
      */
     const createChart = function(obj, slideFrom = 'right') {
-        const poll = $('.requests'),
-            height = $(window).height(),
-            width = $(window).width();
+        const requestsDiv = $('.requests');
+            // height = $(window).height(),
+            // width = $(window).width();
 
         // Update height and stuff.
-        poll.height(height);
-        poll.width(width);
+        // requestsDiv.height(height);
+        // requestsDiv.width(width);
 
-        $('.container').css({
-            'margin-left': -(width / 2),
-            'margin-top': -(height / 2)
-        });
+        // $('.container').css({
+        //     'margin-left': -(width / 2),
+        //     'margin-top': -(height / 2)
+        // });
 
         // Show the chart.
-        poll.toggle('slide', {
+        $('.container').toggle('slide', {
             'direction': slideFrom
         }, 1e3);
 
         // Make the chart.
-        chart = new Chart(poll.get(0).getContext('2d'), getChartConfig(obj));
+        chart = new Chart(requestsDiv.get(0).getContext('2d'), getChartConfig(obj));
 
         chart.update();
     };
@@ -252,7 +262,7 @@ $(function() {
      * @param slideFrom The option where to slide it from, left, right, top, bottom.
      */
     const disposeChart = function(slideFrom = 'right') {
-        $('.requests').toggle('slide', {
+        $('.container').toggle('slide', {
             'direction': slideFrom
         }, 1e3, () => window.location.reload());
     };
@@ -272,20 +282,58 @@ $(function() {
 
         chart.data.labels = config.data.labels;
         chart.data.datasets[0].data = config.data.datasets[0].data;
+        chart.data.datasets[0].backgroundColor = config.data.datasets[0].backgroundColor;
 
         chart.options.plugins = config.options.plugins;
 
-        let dataLen = chart.data.datasets[0].data.length;
-        let colorLen = chart.data.datasets[0].backgroundColor.length;
-        if(dataLen > colorLen) { // if probs redundant with for below, but keeping for clarity
-            for(i = 0; i < dataLen - colorLen; i++) {
-                chart.data.datasets[0].backgroundColor.push(getRandomRGB());
-            }
-        }
         chart.update();
     };
 
-    
+    var lastHistList = [];
+    const updateHistory = function(historyMsg) {
+            //historylist should have fields:
+            // sender
+            // song -- display name
+            // songNameRaw --lookup name,
+            // time - time as int
+
+            let historyList = JSON.parse(historyMsg.data);
+
+            var stillPresentIds = historyList.map(h => h.requestId);
+            var existingIds = [];
+            $("#recentlist li").each((i, e) => {
+                var existId = parseInt($(e).attr('histid'));
+                if(stillPresentIds.includes(existId)) {
+                    existingIds.push(existId);
+                } else {
+                    //hide then remove it after delay
+                    $(e).removeClass("show");
+                    setTimeout(function() { $(e).remove(); }, 10000);
+                }
+            })
+
+            historyList.reverse().forEach(function(h) {
+                if(existingIds.includes(h.requestId)) return; // no need
+                //else it is new
+                var colorLookup = getOrPickSongColor(h.song)
+
+                var newListElt = document.createElement('li')
+                newListElt.innerHTML = h.sender + ": " + h.song
+                $(newListElt).addClass("waiting");
+                $(newListElt).attr("histid", h.requestId)
+                $(newListElt).css("background", colorLookup);
+
+                $("#recentlist").prepend(newListElt);
+
+                setTimeout(function() {
+                    $(newListElt).addClass('show').removeClass('waiting');
+                }, 10);
+            })
+
+            
+
+            lastHistList = historyList;
+    }
 
     // WebSocket events.
 
@@ -350,14 +398,12 @@ $(function() {
                         //hide requests
                         //dispose chart
                         disposeChart(getOptionSetting('slideFromClose', 'right'));
-
-                    }
-                    
-                    //TODO: split this in half
-                    if(message['eventType'] == 'top_songs') {
+                    } else if(message['eventType'] == 'top_songs') {
                         console.log("Update for top songs!")
                         updateChart(message);
-
+                    } else if(message['eventType'] == "request_history"){
+                        console.log("Update of request history!")
+                        updateHistory(message);
                     }
                 }
             }

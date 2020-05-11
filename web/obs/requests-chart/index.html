@@ -27,8 +27,15 @@
 
 <!-- Main body -->
 <body>
-    <div class="container">
-        <canvas class="requests hidden"></canvas>
+    <div class="container hidden">
+        <div class="recents column left">
+            <h1>Request History</h1>
+            <ul class = "swing" id="recentlist"></ul>
+        </div>
+        <div class='column right'>
+            <!-- No title here, use chart instead. Helps with sizing-->
+            <canvas class="requests"></canvas>
+        </div>
     </div>
 
     <!-- Load jQuery -->
