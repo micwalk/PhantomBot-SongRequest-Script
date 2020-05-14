@@ -1,25 +1,14 @@
 /*
- * Copyright (C) 2016-2019 phantombot.tv
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * Copyright (C) 2020 Michael Walker
+ * MIT license, see LICENSE file.
  */
 
 /**
- * pollSystem.js
+ * songRequestSystem.js
  *
- * This module enables the channel owner to start/manage polls
- * Start/stop polls is exported to $.poll for use in other scripts
+ * This module enables the channel mods to open/close song request and 
+ * viewers to suggest songs.
+ * Data stored in DB for continuity and sent via websocke to UI.
  */
 (function() {
 
@@ -33,7 +22,7 @@
 
     var nextSongId = 0; //global for how to make song ids (static variable ideally)
     function Song(name, displayName) {
-        this.songName  = name;
+        this.keyName  = name;
         this.displayName = displayName;
         this.songId    = nextSongId++;
         this.voters    = [];
@@ -79,7 +68,78 @@
         var shortHistory = requests.history.slice(-maxHistory, requests.history.length);
         return shortHistory.reverse();
     }
-    
+
+//DB Docs: https://community.phantom.bot/t/datastore-inidb-api/80
+//Quick Ref
+//Set/get with section
+    // void $.inidb.SetString(String table_name, String section, String key, String value)
+    // String $.inidb.GetString(String table_name, String section, String key)
+//Section == "" to ignore
+// List sections
+    // String[] $.inidb.GetCategoryList(String table_name)
+
+    /*
+     * DB Schema
+     *  
+     *  table: request_data
+        keys: request data elts + single array of names, ptr to request_songs
+
+     *  table: request_songs
+        section: song name
+        keys: song data elts
+     */ 
+    function loadDbData() {
+
+        //TODO: TRY
+        var readRequests = {};
+        readRequests.areOpen = $.inidb.GetBoolean("request_data", "areOpen", "") && true;
+        readRequests.openSongs = JSON.parse($.inidb.GetString("request_data", "songs", ""));
+        
+        
+        var songDataArray = [];
+        var songNameList = $.inidb.GetCategoryList("request_songs")
+        var songDataArray = songNameList.map(function(song) {
+            var displayName = $.inidb.GetString("request_songs", song, "displayName") + "";
+            var readSong = new Song(song  + "", displayName);
+            readSong.voters = JSON.parse($.inidb.GetString("request_songs", song, "voters"))
+            readSong.votes = $.inidb.GetInteger("request_songs", song, "votes")
+            readSong.songId = $.inidb.GetInteger("request_songs", song, "songId")
+            nextSongId = Math.max(readSong.songId+1, nextSongId);
+            return readSong;
+        });
+
+        //Convert songs to map
+        var songDataMap = songDataArray.reduce(function(result, item, index, array) {
+            result[item.keyName] = item;
+            return result;
+          }, {}) //NOTE: Passing the empty {}, which is passed as initial "result"
+
+        readRequests.songs = songDataMap;
+        
+        //Read History
+        readRequests.history = JSON.parse($.inidb.GetString("request_data", "history", ""));
+
+        return readRequests;
+    }
+
+    function saveDbData() {
+        $.inidb.SetBoolean("request_data", "areOpen", "", requests.areOpen);
+        //open song list
+        var songNameArray = Object.keys(requests.songs);
+        $.inidb.SetString("request_data", "songs", "", JSON.stringify(songNameArray));
+
+        $.inidb.SetString("request_data", "history", "", JSON.stringify(requests.history));
+
+        songNameArray.forEach(function(songName) {
+            var song = requests.songs[songName];
+            $.inidb.SetString("request_songs", song.songName, "displayName", song.displayName)
+            $.inidb.SetString("request_songs", song.songName, "voters", JSON.stringify(song.voters))
+            $.inidb.SetInteger("request_songs", song.songName, "votes",  song.votes)
+            $.inidb.SetInteger("request_songs", song.songName, "songId",  song.songId)
+        });
+
+    }
+
     //Sends top song data to the web socket
     function sendTopSongData() {
         $.consoleLn("Sending top songs")
@@ -176,6 +236,14 @@
         return songName.toLowerCase(); //TODO: Clean me more?
     }
 
+    function sayReplyNonBot(sender, text) {
+        if(sender != 'plampbot') {
+            $.say($.whisperPrefix(sender) + text);
+        } else {
+            $.consoleLn("[CONSOLE_ONLY] " + text);
+        }
+    }
+
      /**
      * @function makeRequest
      * @param {string} sender
@@ -183,7 +251,7 @@
      */
     function makeRequest(sender, songName) {
         if (!requests.areOpen) {
-            $.say($.whisperPrefix(sender) + $.lang.get('songrequest.request.notopen'));
+            sayReplyNonBot(sender, $.lang.get('songrequest.request.notopen'));
             return;
         }
 
@@ -194,7 +262,7 @@
         //TODO: validate song name and reject (length? injection? profanity?)
         var songInvalid = cleanSongName.length > 30;
         if(songInvalid) {
-            $.say($.whisperPrefix(sender) + $.lang.get('songrequest.reject.length', songName));
+            sayReplyNonBot(sender, $.lang.get('songrequest.reject.length', songName));
             return;
         }
 
@@ -202,7 +270,7 @@
         if(hasKey(Object.keys(requests.songs), cleanSongName)) {
             var currentSong = requests.songs[cleanSongName];
             if (hasKey(currentSong.voters, sender.toLowerCase())) {
-                $.say($.whisperPrefix(sender) + $.lang.get('songrequest.request.already'));
+                sayReplyNonBot(sender, $.lang.get('songrequest.request.already'));
                 return;
             }    
         } else {
@@ -215,21 +283,19 @@
         currentSong.votes++;
 
         //Record history
-        recordHistory(sender, currentSong.displayName, currentSong.songName);
-        $.say($.whisperPrefix(sender) + $.lang.get('songrequest.request.accepted', currentSong.displayName, currentSong.votes));
+        recordHistory(sender, currentSong.displayName, currentSong.keyName);
+        sayReplyNonBot(sender, $.lang.get('songrequest.request.accepted', currentSong.displayName, currentSong.votes));
 
         //Send data to overlay UI
         sendTopSongData();
         sendRecentHistory();
 
         return true;
-        ////This snippet sent data to the websocket the UI is listening on
-        // $.panelsocketserver.sendJSONToAll(JSON.stringify({
-        //     'new_vote': 'true',
-        //     'data': JSON.stringify(objOBS)
-        // }));
-        ////Who knows what inidb was used for.
+        
+        ////OLD inidb Sync setting
         //Used in web\panel\js\pages\extra\poll.js
+        //This is used in the actual source. Not editable without forking source.
+        //However my ui should be able to read this too, in the future
         //So the main control UI not the overlay UI
         // $.inidb.incr('pollVotes', poll.options[optionIndex], 1);
     };
@@ -256,7 +322,7 @@
             //Mark played
         } else {
             //Complain
-            $.say($.whisperPrefix(sender) + $.lang.get('songrequest.update.notfound'));
+            sayReplyNonBot(sender, $.lang.get('songrequest.update.notfound'));
         }
     };
 
@@ -267,12 +333,33 @@
         if(requests.songs.hasOwnProperty(stdName)) {
             delete requests.songs[stdName];
             sendTopSongData();
-            $.say($.whisperPrefix(sender) + $.lang.get('songrequest.update.deleted', stdName));
+            sayReplyNonBot(sender, $.lang.get('songrequest.update.deleted', stdName));
         } else {
-            $.say($.whisperPrefix(sender) + $.lang.get('songrequest.update.notfound'));
+            sayReplyNonBot(sender, $.lang.get('songrequest.update.notfound'));
         }
     };
 
+    //from https://www.qvera.com/kb/index.php/1156/json-stringify-throws-an-exception
+    var replacer = function(key, value) {
+        var returnValue = value;
+        try {
+           if (value.getClass() !== null) { // If Java Object
+            $.consoleLn(key + ': value.getClass() = ' + value.getClass());
+              if (value instanceof java.lang.Number) {
+                 returnValue = 1 * value;
+              } else if (value instanceof java.lang.Boolean) {
+                 returnValue = value.booleanValue();
+              } else { // if (value instanceof java.lang.String) {
+                 returnValue = '' + value;
+              }
+           }
+        } catch (err) {
+           // No worries... not a Java object
+        }
+        return returnValue;
+     };
+ 
+     
     /**
      * @event command
      */
@@ -291,6 +378,22 @@
         //     }
         // }
         
+        //db docs: https://community.phantom.bot/t/datastore-inidb-api/80
+        if (command.equalsIgnoreCase('dbtest') ) {
+            $.consoleLn("Running DB Test. Sender: " + sender);
+            void $.inidb.RemoveFile("request_data")
+            void $.inidb.RemoveFile("request_songs")
+            
+            $.consoleLn("saving data");
+            saveDbData();
+            $.consoleLn("reading data");
+            var songData = loadDbData();
+            $.consoleLn(JSON.stringify(songData, replacer));
+            $.consoleLn("actual requests:");
+            $.consoleLn(JSON.stringify(requests, replacer));
+            return;
+        }
+        
         if (command.equalsIgnoreCase('request') ) {//&& argsString.length > 0
             // $.say($.whisperPrefix(sender) + "attempting request for " + argsString);
             var requestAccepted = makeRequest(sender, argsString);
@@ -306,9 +409,9 @@
                     //     optionsStr += (i + 1) + ") " + poll.options[i] + (i == poll.options.length - 1 ? "" : " ");
                     // }
                     //TODO: GET TOP SONGS
-                    $.say($.whisperPrefix(sender) + $.lang.get('songrequest.defaultaction.open', ' Use "!songrequests [top | new]" to see requests.'));
+                    sayReplyNonBot(sender, $.lang.get('songrequest.defaultaction.open', ' Use "!songrequests [top | new]" to see requests.'));
                 } else {
-                    $.say($.whisperPrefix(sender) + $.lang.get('songrequest.defaultaction.closed'));
+                    sayReplyNonBot(sender, $.lang.get('songrequest.defaultaction.closed'));
                 }
                 return;
             } else if (action.equalsIgnoreCase('open')) {
@@ -412,6 +515,8 @@
         $.registerChatSubcommand('songrequests', 'delete', 2);
         $.registerChatSubcommand('songrequests', 'reset', 2);
         $.registerChatSubcommand('songrequests', 'refresh', 2);
+
+        $.registerChatCommand('./custom/songRequestSystem.js', 'dbtest', 2);
     });
 
     //TODO: WTF?
