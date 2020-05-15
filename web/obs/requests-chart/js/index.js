@@ -298,17 +298,17 @@ $(function() {
 
     function updateUiFromDb() {
         socket.getDBValue("db_hist_query", 'request_data', 'last_request_history', function(response) {
-            console.log("got resposne from db! for hist list!")
+            console.log("Got db hist list response:")
             console.log(response);
             
-            updateHistory(JSON.parse(response.request_data));
+            if(response.request_data) updateHistory(JSON.parse(response.request_data));
         })
 
         socket.getDBValue("db_top_query", 'request_data', 'last_top_songs', function(response) {
-            console.log("got resposne from db! for top list!")
+            console.log("Got db top list response:")
             console.log(response);
 
-            updateChart(JSON.parse(response.request_data));
+            if(response.request_data) updateChart(JSON.parse(response.request_data));
             
         })
     }

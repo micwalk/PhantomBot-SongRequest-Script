@@ -335,6 +335,7 @@
             }
             
             sendTopSongData();
+            saveDbData();
             $.say($.lang.get('songrequest.update.played', songdata.displayName, voterString));
             //Mark played
         } else {
@@ -350,6 +351,7 @@
         if(requests.songs.hasOwnProperty(stdName)) {
             delete requests.songs[stdName];
             sendTopSongData();
+            saveDbData();
             sayReplyNonBot(sender, $.lang.get('songrequest.update.deleted', stdName));
         } else {
             sayReplyNonBot(sender, $.lang.get('songrequest.update.notfound'));
@@ -415,13 +417,15 @@
         if (command.equalsIgnoreCase('dbtest') ) {
             $.consoleLn("Running DB Test. Sender: " + sender);
             
-            // $.consoleLn("saving data");
-            // saveDbData();
-            // $.consoleLn("reading data");
-            // var songData = loadDbData();
-            // $.consoleLn(JSON.stringify(songData, replacer));
-            // $.consoleLn("actual requests:");
-            // $.consoleLn(JSON.stringify(requests, replacer));
+            $.consoleLn("requests as it is in memory:");
+            $.consoleLn(JSON.stringify(requests, replacer));
+
+            $.consoleLn("saving data");
+            saveDbData();
+            $.consoleLn("requests as read back from database:");
+            var songData = loadDbData();
+            $.consoleLn(JSON.stringify(songData, replacer));
+            
 
             $.consoleLn("sending msg to UI. see ui for handling");
 
