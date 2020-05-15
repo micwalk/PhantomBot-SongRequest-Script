@@ -17,10 +17,11 @@
 
 // Main stuff.
 $(function() {
-    var webSocket = new ReconnectingWebSocket((getProtocol() === 'https://' || window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws/panel', null, { reconnectInterval: 500 }),
-        localConfigs = getQueryMap(),
+    var localConfigs = getQueryMap(),
         chart,
         songColorMap = {};
+
+    var socket = window.socket;
 
     var maxDisplaySongs = 8;
 
@@ -45,28 +46,6 @@ $(function() {
     }
 
     /*
-     * @function Used to send messages to the socket. This should be private to this script.
-     *
-     * @param {Object} message
-     */
-    const sendToSocket = function(message) {
-        try {
-            let json = JSON.stringify(message);
-
-            webSocket.send(json);
-
-            // Make sure to not show the user's token.
-            if (json.indexOf('authenticate') !== -1) {
-                logSuccess('sendToSocket:: ' + json.substring(0, json.length - 20) + '.."}');
-            } else {
-                logSuccess('sendToSocket:: ' + json);
-            }
-        } catch (e) {
-            logError('Failed to send message to socket: ' + e.message);
-        }
-    };
-
-    /*
      * @function Checks if the query map has the option, if not, returns default.
      *
      * @param  {String} option
@@ -81,20 +60,6 @@ $(function() {
         } else {
             return def;
         }
-    };
-
-    /*
-     * @function Used to log things in the console.
-     */
-    const logSuccess = function(message) {
-        console.log('%c[PhantomBot Log]', 'color: #6441a5; font-weight: 900;', message);
-    };
-
-    /*
-     * @function Used to log things in the console.
-     */
-    const logError = function(message) {
-        console.log('%c[PhantomBot Error]', 'color: red; font-weight: 900;', message);
     };
 
     /*
@@ -123,13 +88,11 @@ $(function() {
     /*
      * @function Function that gets data for our chart.
      *
-     * @param obj The object of data
+     * @param parsedData The parsed chart data
      * @param updateColor If the chart colors should be updated.
      * @return The config.
      */
-    const getChartConfig = function(obj, updateColor = true) {
-
-        let parsedData = JSON.parse(obj.data);
+    const getChartConfig = function(parsedData, updateColor = true) {
         let totalVotes = parsedData.map(json => {return parseInt(json.votes)}).reduce((a, b) => a + b, 0)
 
         //Target state:
@@ -231,7 +194,7 @@ $(function() {
      * @param obj The object of data
      * @param slideFrom The option where to slide it from, left, right, top, bottom.
      */
-    const createChart = function(obj, slideFrom = 'right') {
+    const createChart = function(parseObj, slideFrom = 'right') {
         const requestsDiv = $('.requests');
             // height = $(window).height(),
             // width = $(window).width();
@@ -251,7 +214,7 @@ $(function() {
         }, 1e3);
 
         // Make the chart.
-        chart = new Chart(requestsDiv.get(0).getContext('2d'), getChartConfig(obj));
+        chart = new Chart(requestsDiv.get(0).getContext('2d'), getChartConfig(parseObj));
 
         chart.update();
     };
@@ -290,14 +253,12 @@ $(function() {
     };
 
     var lastHistList = [];
-    const updateHistory = function(historyMsg) {
+    const updateHistory = function(historyList) {
             //historylist should have fields:
             // sender
             // song -- display name
             // songNameRaw --lookup name,
             // time - time as int
-
-            let historyList = JSON.parse(historyMsg.data);
 
             var stillPresentIds = historyList.map(h => h.requestId);
             var existingIds = [];
@@ -335,64 +296,38 @@ $(function() {
             lastHistList = historyList;
     }
 
-    // WebSocket events.
+    function updateUiFromDb() {
+        socket.getDBValue("db_hist_query", 'request_data', 'last_request_history', function(response) {
+            console.log("Got db hist list response:")
+            console.log(response);
+            
+            if(response.request_data) updateHistory(JSON.parse(response.request_data));
+        })
 
-    /*
-     * @function Called when the socket opens.
-     */
-    webSocket.onopen = function() {
-        logSuccess('Connection established with the websocket.');
+        socket.getDBValue("db_top_query", 'request_data', 'last_top_songs', function(response) {
+            console.log("Got db top list response:")
+            console.log(response);
 
-        // Auth with the socket.
-        sendToSocket({
-            authenticate: getAuth()
-        });
-    };
-
-    /*
-     * @function Socket calls when it closes
-     */
-    webSocket.onclose = function() {
-        logError('Connection lost with the websocket.');
-    };
-
+            if(response.request_data) updateChart(JSON.parse(response.request_data));
+            
+        })
+    }
     /*
      * @function Called when we get a message.
      *
      * @param {Object} e
      */
-    webSocket.onmessage = function(e) {
+    const handleSocketMessage = function(e) {
         try {
             console.log("got websocket with data");
             console.log(e);
 
-            // Handle PING/PONG
-            if (e.data == 'PING') {
-                webSocket.send('PONG');
-                return;
-            }
 
             let rawMessage = e.data,
                 message = JSON.parse(rawMessage);
 
-            if (!message.hasOwnProperty('query_id')) { //query_id is used in responses from db requests
-                // Check for our auth result.
-                if (message.hasOwnProperty('authresult')) {
-                    if (message.authresult === 'true') {
-                        logSuccess('Successfully authenticated with the socket.');
-                    } else {
-                        logError('Failed to authenticate with the socket.');
-                    }
-                } else if(message.hasOwnProperty('eventFamily') && message['eventFamily'] == 'requests') {
+                if(message.hasOwnProperty('eventFamily') && message['eventFamily'] == 'requests') {
                     // Handle request related stuff
-                    //XXX: This is now just handled by generic top_songs event.
-                    // if(message['eventType'] == 'requests_opened') {
-                    //     console.log("requests opened!")
-                    //     //start showing requests
-                    //     //create chart
-                    //     createChart(message, getOptionSetting('slideFromOpen', 'right'));
-                    // }
-
                     if(message['eventType'] == 'requests_closed') {
                         console.log("requests closed!")
                         //hide requests
@@ -400,16 +335,42 @@ $(function() {
                         disposeChart(getOptionSetting('slideFromClose', 'right'));
                     } else if(message['eventType'] == 'top_songs') {
                         console.log("Update for top songs!")
-                        updateChart(message);
+                        updateChart(JSON.parse(message.data));
                     } else if(message['eventType'] == "request_history"){
                         console.log("Update of request history!")
-                        updateHistory(message);
+                        updateHistory(JSON.parse(message.data));
+                    }  else if(message['eventType'] == "db_test"){
+                        console.log("Update dem db bro!")
+                        updateUiFromDb();
                     }
                 }
-            }
+            
         } catch (ex) {
             logError('Error while parsing socket message: ' + ex.message);
             logError('Message: ' + e.data);
         }
     };
+
+    // WebSocket events.
+    socket.addFamilyHandler("requests", handleSocketMessage);
+
+    const TryInitData = function () {
+        if (socket) {
+            //if socket is connecting wait 500ms to retry send the message
+            let rdy = socket.getReadyState();
+            if(rdy === 0){
+                console.log("waiting for socket to connect")
+                setTimeout(()=>TryInitData(),500);
+                return;
+            }
+            updateUiFromDb();
+        } else {
+            throw 'INVALID_STATE_ERR : Pausing to reconnect websocket';
+        }
+    };
+
+    $( document ).ready(function() {
+        TryInitData();
+    });
+
 });
