@@ -11,13 +11,12 @@
  * Data stored in DB for continuity and sent via websocke to UI.
  */
 (function() {
-
     
     var requests = {
         areOpen: true,
         songs: {},
         history: [],
-        playedSongs: []
+        // playedSongs: []
     }
 
     var nextSongId = 0; //global for how to make song ids (static variable ideally)
@@ -132,10 +131,10 @@
 
         songNameArray.forEach(function(songName) {
             var song = requests.songs[songName];
-            $.inidb.SetString("request_songs", song.songName, "displayName", song.displayName)
-            $.inidb.SetString("request_songs", song.songName, "voters", JSON.stringify(song.voters))
-            $.inidb.SetInteger("request_songs", song.songName, "votes",  song.votes)
-            $.inidb.SetInteger("request_songs", song.songName, "songId",  song.songId)
+            $.inidb.SetString("request_songs",  song.keyName, "displayName", song.displayName)
+            $.inidb.SetString("request_songs",  song.keyName, "voters", JSON.stringify(song.voters))
+            $.inidb.SetInteger("request_songs", song.keyName, "votes",  song.votes)
+            $.inidb.SetInteger("request_songs", song.keyName, "songId",  song.songId)
         });
 
     }
@@ -307,7 +306,7 @@
         if(requests.songs.hasOwnProperty(stdName)) {
             var songdata = requests.songs[stdName]
             delete requests.songs[stdName];
-            requests.playedSongs.push(songdata); //Add to played history.
+            // requests.playedSongs.push(songdata); //Add to played history.
 
             //Can't use whisperPrefix to everyone, so send one group message.
             var voterString = ""
