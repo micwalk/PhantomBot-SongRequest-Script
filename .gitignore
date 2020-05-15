@@ -29,6 +29,14 @@ web/*
 web/obs/*
 !web/obs/requests-chart
 
+!web/common/
+web/common/*
+
+!web/common/js/
+web/common/js/*
+
+!web/common/js/socketWrapper.js
+
 #songRequestSystem.js
 #!*/web/obs/requests-chart/*
 

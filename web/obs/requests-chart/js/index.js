@@ -88,13 +88,11 @@ $(function() {
     /*
      * @function Function that gets data for our chart.
      *
-     * @param obj The object of data
+     * @param parsedData The parsed chart data
      * @param updateColor If the chart colors should be updated.
      * @return The config.
      */
-    const getChartConfig = function(obj, updateColor = true) {
-
-        let parsedData = JSON.parse(obj.data);
+    const getChartConfig = function(parsedData, updateColor = true) {
         let totalVotes = parsedData.map(json => {return parseInt(json.votes)}).reduce((a, b) => a + b, 0)
 
         //Target state:
@@ -196,7 +194,7 @@ $(function() {
      * @param obj The object of data
      * @param slideFrom The option where to slide it from, left, right, top, bottom.
      */
-    const createChart = function(obj, slideFrom = 'right') {
+    const createChart = function(parseObj, slideFrom = 'right') {
         const requestsDiv = $('.requests');
             // height = $(window).height(),
             // width = $(window).width();
@@ -216,7 +214,7 @@ $(function() {
         }, 1e3);
 
         // Make the chart.
-        chart = new Chart(requestsDiv.get(0).getContext('2d'), getChartConfig(obj));
+        chart = new Chart(requestsDiv.get(0).getContext('2d'), getChartConfig(parseObj));
 
         chart.update();
     };
@@ -255,14 +253,12 @@ $(function() {
     };
 
     var lastHistList = [];
-    const updateHistory = function(historyMsg) {
+    const updateHistory = function(historyList) {
             //historylist should have fields:
             // sender
             // song -- display name
             // songNameRaw --lookup name,
             // time - time as int
-
-            let historyList = JSON.parse(historyMsg.data);
 
             var stillPresentIds = historyList.map(h => h.requestId);
             var existingIds = [];
@@ -300,6 +296,22 @@ $(function() {
             lastHistList = historyList;
     }
 
+    function updateUiFromDb() {
+        socket.getDBValue("db_hist_query", 'request_data', 'last_request_history', function(response) {
+            console.log("got resposne from db! for hist list!")
+            console.log(response);
+            
+            updateHistory(JSON.parse(response.request_data));
+        })
+
+        socket.getDBValue("db_top_query", 'request_data', 'last_top_songs', function(response) {
+            console.log("got resposne from db! for top list!")
+            console.log(response);
+
+            updateChart(JSON.parse(response.request_data));
+            
+        })
+    }
     /*
      * @function Called when we get a message.
      *
@@ -323,10 +335,13 @@ $(function() {
                         disposeChart(getOptionSetting('slideFromClose', 'right'));
                     } else if(message['eventType'] == 'top_songs') {
                         console.log("Update for top songs!")
-                        updateChart(message);
+                        updateChart(JSON.parse(message.data));
                     } else if(message['eventType'] == "request_history"){
                         console.log("Update of request history!")
-                        updateHistory(message);
+                        updateHistory(JSON.parse(message.data));
+                    }  else if(message['eventType'] == "db_test"){
+                        console.log("Update dem db bro!")
+                        updateUiFromDb();
                     }
                 }
             
@@ -338,4 +353,24 @@ $(function() {
 
     // WebSocket events.
     socket.addFamilyHandler("requests", handleSocketMessage);
+
+    const TryInitData = function () {
+        if (socket) {
+            //if socket is connecting wait 500ms to retry send the message
+            let rdy = socket.getReadyState();
+            if(rdy === 0){
+                console.log("waiting for socket to connect")
+                setTimeout(()=>TryInitData(),500);
+                return;
+            }
+            updateUiFromDb();
+        } else {
+            throw 'INVALID_STATE_ERR : Pausing to reconnect websocket';
+        }
+    };
+
+    $( document ).ready(function() {
+        TryInitData();
+    });
+
 });

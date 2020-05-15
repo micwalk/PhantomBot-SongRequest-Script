@@ -36,7 +36,13 @@
         nextRequestHistId = 0;
         sendTopSongData();
         sendRecentHistory();
-        saveDbData();
+        saveDbData(); 
+
+        $.inidb.del("request_data", "last_request_history")
+        $.inidb.del("request_data", "last_top_songs")
+
+
+        //todo: top and hist
     }
 
     // //object we rewrite constantly to send data to the obs overlay websocket.
@@ -156,10 +162,15 @@
     //Sends top song data to the web socket
     function sendTopSongData() {
         $.consoleLn("Sending top songs")
+
+        var topRequests = JSON.stringify(getTopRequests())
+        //Write to db first, then send event.
+        void $.inidb.set("request_data", "last_top_songs", topRequests);
+
         $.panelsocketserver.sendJSONToAll(JSON.stringify({
             'eventFamily': 'requests',
             'eventType': 'top_songs',
-            'data': JSON.stringify(getTopRequests())
+            'data': topRequests
         }));
     }
     
@@ -172,7 +183,10 @@
         var recentList = getRecentHistory(SEND_HIST_SIZE);
         var serializedList = JSON.stringify(recentList)
 
-        $.consoleLn(serializedList);
+        // $.consoleLn(serializedList);
+
+        //Write to db first, then send event.
+        void $.inidb.set("request_data", "last_request_history", serializedList);
 
         $.panelsocketserver.sendJSONToAll(JSON.stringify({
             'eventFamily': 'requests',
@@ -400,16 +414,28 @@
         //db docs: https://community.phantom.bot/t/datastore-inidb-api/80
         if (command.equalsIgnoreCase('dbtest') ) {
             $.consoleLn("Running DB Test. Sender: " + sender);
-            void $.inidb.RemoveFile("request_data")
-            void $.inidb.RemoveFile("request_songs")
             
-            $.consoleLn("saving data");
-            saveDbData();
-            $.consoleLn("reading data");
-            var songData = loadDbData();
-            $.consoleLn(JSON.stringify(songData, replacer));
-            $.consoleLn("actual requests:");
-            $.consoleLn(JSON.stringify(requests, replacer));
+            // $.consoleLn("saving data");
+            // saveDbData();
+            // $.consoleLn("reading data");
+            // var songData = loadDbData();
+            // $.consoleLn(JSON.stringify(songData, replacer));
+            // $.consoleLn("actual requests:");
+            // $.consoleLn(JSON.stringify(requests, replacer));
+
+            $.consoleLn("sending msg to UI. see ui for handling");
+
+            $.panelsocketserver.sendJSONToAll(JSON.stringify({
+                'eventFamily': 'requests',
+                'eventType': 'db_test'
+            }));
+
+            $.consoleLn("hist:");
+            $.consoleLn($.inidb.get("request_data", "last_request_history"));
+            $.consoleLn("top:");
+            $.consoleLn($.inidb.get("request_data", "last_top_songs"));
+            
+
             return;
         }
         
