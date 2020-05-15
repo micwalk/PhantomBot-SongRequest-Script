@@ -18,14 +18,25 @@
         history: [],
         // playedSongs: []
     }
-
     var nextSongId = 0; //global for how to make song ids (static variable ideally)
+    var nextRequestHistId = 0;
+
     function Song(name, displayName) {
         this.keyName  = name;
         this.displayName = displayName;
         this.songId    = nextSongId++;
         this.voters    = [];
-        this.votes     = 0;
+        this.votes     = 0; 
+    }
+
+    function resetRequests() {
+        requests.songs = {};
+        requests.history = [];
+        nextSongId = 0;
+        nextRequestHistId = 0;
+        sendTopSongData();
+        sendRecentHistory();
+        saveDbData();
     }
 
     // //object we rewrite constantly to send data to the obs overlay websocket.
@@ -52,7 +63,7 @@
         return requestDataSimple.sort(function (a, b) {return (a.votes < b.votes) ? 1 : -1});
     }
 
-    var nextRequestHistId = 0;
+    
     function recordHistory(requestor, songDisplayName, songStdName) {
         requests.history.push({
             requestId: nextRequestHistId++,
@@ -117,7 +128,10 @@
         
         //Read History
         readRequests.history = JSON.parse($.inidb.GetString("request_data", "history", ""));
-
+        //$.consoleLn("hist read: " + JSON.stringify(readRequests.history.map(function(h) {h.requestId})));
+        $.consoleLn("histids read: " + JSON.stringify(readRequests.history.map(function(h) {return h.requestId})));
+        nextRequestHistId = readRequests.history.map(function(h) {return h.requestId}).reduce(Math.max, 0);
+         
         return readRequests;
     }
 
@@ -224,12 +238,6 @@
         return true;
     }
 
-    function resetRequests() {
-        requests.songs = {};
-        requests.history = [];
-        sendTopSongData();
-    }
-
 
     function standardizeName(songName) {
         return songName.toLowerCase(); //TODO: Clean me more?
@@ -285,18 +293,14 @@
         recordHistory(sender, currentSong.displayName, currentSong.keyName);
         sayReplyNonBot(sender, $.lang.get('songrequest.request.accepted', currentSong.displayName, currentSong.votes));
 
-        //Send data to overlay UI
+        //Save to db (just overwrite everything rather than incremental right now)
+        saveDbData()
+        
+        //Notify UI - Send data to overlay UI
         sendTopSongData();
         sendRecentHistory();
 
         return true;
-        
-        ////OLD inidb Sync setting
-        //Used in web\panel\js\pages\extra\poll.js
-        //This is used in the actual source. Not editable without forking source.
-        //However my ui should be able to read this too, in the future
-        //So the main control UI not the overlay UI
-        // $.inidb.incr('pollVotes', poll.options[optionIndex], 1);
     };
 
     function updateRequestPlayed(songName, sender) {
@@ -306,7 +310,7 @@
         if(requests.songs.hasOwnProperty(stdName)) {
             var songdata = requests.songs[stdName]
             delete requests.songs[stdName];
-            // requests.playedSongs.push(songdata); //Add to played history.
+            // requests.playedSongs.push(songdata); //Add to played history. xxx: abandon idea?
 
             //Can't use whisperPrefix to everyone, so send one group message.
             var voterString = ""
@@ -358,11 +362,27 @@
         return returnValue;
      };
  
-     
+    
+     var ranCustomInit = false;
+     function customInit() {
+        ranCustomInit = true;
+         try {
+            requests = loadDbData();
+            $.consoleLn("loaded db data yay");
+         } catch(err) {
+            $.consoleLn("Failed to load data with err: " + err);
+         }
+     }
+    
     /**
      * @event command
      */
     $.bind('command', function(event) {
+
+        if(!ranCustomInit) {
+            customInit();
+        }
+
         //Adding "" to cast as js strings. blows up serialization if not done
         var sender = "" + event.getSender().toLowerCase(),
             command = event.getCommand(),
@@ -430,7 +450,7 @@
 
                 closeRequests();
             } else if (action.equalsIgnoreCase('reset')) {
-                $.say($.lang.get('songrequest.action.reset'));
+                sayReplyNonBot(sender, $.lang.get('songrequest.action.reset'));
                 resetRequests();
             } else if (action.equalsIgnoreCase('top')) {
                 if(Object.keys(requests.songs).length == 0) {
