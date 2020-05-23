@@ -18,6 +18,46 @@
 //NOTE: this is straight copied from panel's index.js
 // Main socket and functions.
 $(function() {
+
+
+    var helpers = {};
+
+    helpers.DEBUG_STATES = {
+        NONE: 0,
+        DEBUG: 1,
+        INFO: 2,
+        FORCE: 3
+    };
+    // Debug status. 0 = off | 1 = on.
+    helpers.DEBUG_STATE = (localStorage.getItem('phantombot_debug_state') !== null ? parseInt(localStorage.getItem('phantombot_debug_state')) : helpers.DEBUG_STATES.NONE);
+    // Debug types.
+    helpers.LOG_TYPE = helpers.DEBUG_STATES;
+    
+    /*
+     * @function Used to print debug messages in the console.
+     *
+     * @param {String}  message
+     * @param {Number} type
+     */
+    helpers.log = function(message, type) {
+        if (helpers.DEBUG_STATE === helpers.DEBUG_STATES.DEBUG || type === helpers.DEBUG_STATE || type === helpers.LOG_TYPE.FORCE) {
+            console.log('%c[PhantomBot Log]', 'color: #6441a5; font-weight: 900;', message);
+        }
+    };
+
+    /*
+     * @function Used to print error messages in the console.
+     *
+     * @param {String}  message
+     * @param {Number} type
+     */
+    helpers.logError = function(message, type) {
+        console.log('%c[PhantomBot Error]', 'color: red; font-weight: 900;', message);
+    };
+
+
+
+
     var webSocket = new ReconnectingWebSocket((getProtocol() === 'https://' || window.location.protocol === 'https:' ? 'wss://' : 'ws://') + window.location.host + '/ws/panel', null, { reconnectInterval: 500 }),
         callbacks = [],
         listeners = [],
